@@ -6,11 +6,13 @@ This is a Python fork of [kubedoom](https://github.com/storax/kubedoom), forked 
 
 Also taken great inspiration from [terraform-doom](https://github.com/theobori/terraform-doom).
 
-![In game ( NOT UPDATED )](./assets/ansible-doom.png)
+![In game](./assets/ansible-doom.png)
 
-## ℹ️ Usage ( NOT UPDATED )
+## ℹ️ Usage
 
-An example with the Ansible project in `examples` folder. This example is a special testing-only case using 10 Ansible hosts which are all defined to localhost, while the playbook itself only pings each host it is given..
+An example with the Ansible project in `examples` folder. This example is a special testing-only case using 10 Ansible hosts which are all defined to localhost, while the playbook itself only pings each host it is given.
+
+As of now - the spawn point for said enemies will be at startup on the outside area ( out of bounds but can be seen + accessed by the **`idspispopd`** No-Clip cheat code. )
 
 The Ansible project directory ( **Must include `hosts.ini` & `playbook.yml` files** ) must be bound at `/doomsible/conf` inside the container (like below).
 
@@ -21,6 +23,7 @@ docker run \
     --name ansible-doom \
     -p 5900:5900 \
     -v $PWD/example:/doomsible/conf \
+    ghcr.io/krokz/ansible-doom:latest
 
 ```
 
