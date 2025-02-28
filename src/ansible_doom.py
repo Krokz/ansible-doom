@@ -13,6 +13,9 @@ SOCKET_PATH = '/dockerdoom.socket'
 INVENTORY_FILE = f'/doomsible/conf/{hosts_filename}'         # Mounted inventory file (Ansible ini format)
 PLAYBOOK_FILE = f'/doomsible/conf/{playbook_filename}' # Mounted playbook file
 
+
+deployment_semaphore = asyncio.Semaphore(3)
+
 async def get_hosts_from_inventory(inventory_file):
     """
     Reads the inventory file and returns a list of hosts,
@@ -45,34 +48,36 @@ async def run_ansible_deployment(hostname):
     Creates a temporary inventory file containing only the target host,
     then asynchronously invokes ansible-playbook with --limit to target that host.
     """
-    # Create temporary inventory file content.
-    with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_inv:
-        temp_inv.write("[all]\n")
-        temp_inv.write(f"{hostname}\n")
-        temp_inv_path = temp_inv.name
 
-    # The --limit flag targets a specific host, as an extra safety measure.
-    cmd = [
-        "ansible-playbook", "-i", temp_inv_path,
-        PLAYBOOK_FILE, "--limit", hostname
-    ]
-    print(f"Starting ansible deployment for {hostname} using inventory {temp_inv_path}")
-    
-    # Launch ansible-playbook asynchronously.
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await process.communicate()
-    
-    if process.returncode == 0:
-        print(f"Deployment for {hostname} succeeded:\n{stdout.decode()}")
-    else:
-        print(f"Deployment for {hostname} failed (code {process.returncode}):\n{stderr.decode()}")
-    
-    # Clean up the temporary inventory file.
-    os.remove(temp_inv_path)
+    async with deployment_semaphore:
+        # Create temporary inventory file content.
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as temp_inv:
+            temp_inv.write("[all]\n")
+            temp_inv.write(f"{hostname}\n")
+            temp_inv_path = temp_inv.name
+
+        # The --limit flag targets a specific host, as an extra safety measure.
+        cmd = [
+            "ansible-playbook", "-i", temp_inv_path,
+            PLAYBOOK_FILE, "--limit", hostname
+        ]
+        print(f"Starting ansible deployment for {hostname} using inventory {temp_inv_path}")
+        
+        # Launch ansible-playbook asynchronously.
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode == 0:
+            print(f"Deployment for {hostname} succeeded:\n{stdout.decode()}")
+        else:
+            print(f"Deployment for {hostname} failed (code {process.returncode}):\n{stderr.decode()}")
+        
+        # Clean up the temporary inventory file.
+        os.remove(temp_inv_path)
 
 async def handle_client(reader, writer):
     """
