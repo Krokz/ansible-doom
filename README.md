@@ -1,20 +1,25 @@
-# 🔨 ansible-doom
+# 🔨 Ansible-DOOM
 
-Entertaining Ansible chaos engineering, deploy ansible configurations by killing DOOM enemies.
+Entertaining Ansible chaos engineering—deploy Ansible configurations by killing DOOM enemies.
 
-This is a Python fork of [kubedoom](https://github.com/storax/kubedoom), forked from [dockerdoom](https://github.com/gideonred/dockerdoom), forked from  **`psdoom`**.
-
-Also taken great inspiration from [terraform-doom](https://github.com/theobori/terraform-doom).
+This project is a Python fork inspired by several projects:
+- Based on [kubedoom](https://github.com/storax/kubedoom) (a Go project).
+- Forked from [dockerdoom](https://github.com/gideonred/dockerdoom).
+- Also heavily inspired by [terraform-doom](https://github.com/theobori/terraform-doom).
 
 ![In game](./assets/ansible-doom.png)
 
 ## ℹ️ Usage
 
-An example with the Ansible project in `examples` folder. This example is a special testing-only case using 10 Ansible hosts which are all defined to localhost, while the playbook itself only pings each host it is given.
+This example uses an Ansible project from the `examples` folder. In this testing-only case, the inventory defines 10 Ansible hosts (all set to `localhost`), and the playbook simply pings each host.
 
-As of now - the spawn point for said enemies will be at startup on the outside area ( out of bounds but can be seen + accessed by the **`idspispopd`** No-Clip cheat code. )
+At startup, enemy spawn points appear on an out-of-bounds area. You can view and access them using the **`idspispopd`** No-Clip cheat code.
 
-The Ansible project directory ( **Must include `hosts.ini` & `playbook.yml` files** ) must be bound at `/doomsible/conf` inside the container (like below).
+The Ansible project directory must be mounted into the container at `/doomsible/conf`. Optionally, you can pass the environment variables `ANSIBLE_FILENAME` and `HOSTS_FILENAME` to specify custom file names. If not set, the defaults are:
+- **ANSIBLE_FILENAME:** `ansible-playbook.yml`
+- **HOSTS_FILENAME:** `hosts.ini`
+
+### Running the Container
 
 ```bash
 docker run \
@@ -22,29 +27,34 @@ docker run \
     --rm=true \
     --name ansible-doom \
     -p 5900:5900 \
+    -e ANSIBLE_FILENAME=playbook.yml \
+    -e HOSTS_FILENAME=hosts.ini \
     -v $PWD/example:/doomsible/conf \
     ghcr.io/krokz/ansible-doom:latest
-
 ```
 
-Now you can play DOOM through a VNC client. Example with `vnclient`:
+### Accessing the Game
+
+Once the container is running, connect to the DOOM game via a VNC client. For example:
 
 ```bash
 vncviewer viewer localhost:5900
 ```
 
-The default password is `1234`
+The default VNC password is **`1234`**.
 
-You can change that by building the image yourself:
+### Customizing the VNC Password
+
+To change the VNC password, build the image yourself and pass the `VNC_PASSWORD` build argument:
 
 ```bash
-docker buildx build .\
+docker buildx build . \
     -t ansible-doom \
-    --build-arg VNC_PASSWORD=custom_password \
+    --build-arg VNC_PASSWORD=custom_password
 ```
 
-## 🔎 Cheat codes
+## 🔎 Cheat Codes
 
-There are some useful cheat codes in-game:
-- **`idkfa`**: Get a weapon on slot 5
-- **`idspispopd`**: No clip (useful to reach the mobs)
+In-game, you can use the following cheat codes:
+- **`idkfa`**: Get a weapon on slot 5.
+- **`idspispopd`**: No Clip (useful to reach the enemies).

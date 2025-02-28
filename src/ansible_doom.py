@@ -4,10 +4,14 @@ import tempfile
 import os
 import asyncio.subprocess
 
+
+hosts_filename = os.environ.get('HOSTS_FILENAME', 'hosts.ini')
+playbook_filename = os.environ.get('ANSIBLE_FILENAME', 'ansible-playbook.yml')
+
 # Paths for config files and socket.
 SOCKET_PATH = '/dockerdoom.socket'
-INVENTORY_FILE = '/doomsible/conf/hosts.ini'         # Mounted inventory file (Ansible ini format)
-PLAYBOOK_FILE = '/doomsible/conf/ansible-playbook.yml' # Mounted playbook file
+INVENTORY_FILE = f'/doomsible/conf/{hosts_filename}'         # Mounted inventory file (Ansible ini format)
+PLAYBOOK_FILE = f'/doomsible/conf/{playbook_filename}' # Mounted playbook file
 
 async def get_hosts_from_inventory(inventory_file):
     """
