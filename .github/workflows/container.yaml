@@ -23,10 +23,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: version
         run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+      - id: lowercase
+        run: echo "REPO=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT      
       - uses: docker/build-push-action@v2
         with:
           platforms: linux/amd64, linux/arm64
           push: true
           tags: |-
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ steps.lowercase.outputs.REPO }}:latest
+            ghcr.io/${{ steps.lowercase.outputs.REPO }}:${{ steps.version.outputs.VERSION }}
