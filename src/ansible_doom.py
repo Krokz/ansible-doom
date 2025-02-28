@@ -116,9 +116,9 @@ async def start_doom_environment():
     """
     Spawns background processes for Xvfb, x11vnc, and DOOM.
     """
-    # Start Xvfb
+    # Start Xvfb - X Virtual Framebuffer
     print("Starting Xvfb...")
-    xfvb_proc = await asyncio.create_subprocess_exec(
+    xvfb_proc = await asyncio.create_subprocess_exec(
         "/usr/bin/Xvfb", ":99", "-ac", "-screen", "0", "640x480x24",
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL
@@ -126,7 +126,7 @@ async def start_doom_environment():
     # Wait a couple seconds to allow Xvfb to initialize.
     await asyncio.sleep(2)
 
-    # Start x11vnc
+    # Start x11vnc - VNC client for X11
     print("Starting x11vnc...")
     x11vnc_proc = await asyncio.create_subprocess_exec(
         "x11vnc", "-geometry", "640x480", "-forever", "-usepw", "-create", "-display", ":99",
@@ -145,14 +145,13 @@ async def start_doom_environment():
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL
     )
-    # Optionally, you could store these process handles if you need to manage them later.
     print("DOOM environment started.")
 
 async def main():
     # Launch DOOM environment processes.
     await start_doom_environment()
 
-    # Remove the socket file if it already exists.
+    # Remove the socket file if it already exists - cleanup from previous runs in case any leftovers found.
     if os.path.exists(SOCKET_PATH):
         os.remove(SOCKET_PATH)
 

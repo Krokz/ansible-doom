@@ -37,7 +37,6 @@ RUN apt-get update -y && \
       libsdl-net1.2 \
       netcat \
       python3 \
-      python3-pip \
       ansible
 
 # Copy the DOOM IWAD and DOOM binary (psdoom) from the build stage.
