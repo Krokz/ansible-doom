@@ -1,127 +1,47 @@
-# Kube DOOM
-## Kill Kubernetes pods using Id's Doom!
+# 🔨 ansible-doom
 
-The next level of chaos engineering is here! Kill pods inside your Kubernetes
-cluster by shooting them in Doom!
+Entertaining Ansible chaos engineering, deploy ansible configurations by killing DOOM enemies.
 
-This is a fork of the excellent
-[gideonred/dockerdoomd](https://github.com/gideonred/dockerdoomd) using a
-slightly modified Doom, forked from https://github.com/gideonred/dockerdoom,
-which was forked from psdoom.
+This is a Python fork of [kubedoom](https://github.com/storax/kubedoom), forked from [dockerdoom](https://github.com/gideonred/dockerdoom), forked from  **`psdoom`**. 
+Also taken a bit of inspiration from [terraform-doom](https://github.com/theobori/terraform-doom).
 
-![DOOM](assets/doom.jpg)
+![In game ( NOT UPDATED )](./assets/in-game.png)
 
-## Running Locally
+## ℹ️ Usage ( NOT UPDATED )
 
-In order to run locally you will need to
+An example with the Terraform project in `./examples`. Feel free to **`terraform apply`** before or after running the Docker container, both will work. This is a special case using the `local` Terraform provider with files, if you want them to get deleted, you must bind a volume into the Docker container. Otherwise it will work, but only the Terraform resources are going to be destroyed.
 
-1. Run the kubedoom container
-2. Attach a VNC client to the appropriate port (5901)
+The Terraform project directory must be bound at `/terraform` inside the container (like below).
 
-### With Docker
+```bash
+docker run \
+    -itd \
+    --rm=true \
+    --name ansible-doom \
+    -p 5900:5900 \
+    -v $PWD/examples:/doomsible \
 
-Run `ghcr.io/storax/kubedoom:latest` with docker locally:
-
-```console
-$ docker run -p5901:5900 \
-  --net=host \
-  -v ~/.kube:/root/.kube \
-  --rm -it --name kubedoom \
-  ghcr.io/storax/kubedoom:latest
 ```
 
-Optionally, if you set `-e NAMESPACE={your namespace}` you can limit Kubedoom to deleting pods in a single namespace
+Now you can play DOOM through a VNC client. Example with `vnclient`:
 
-### With Podman
-
-Run `ghcr.io/storax/kubedoom:latest` with podman locally:
-
-```console
-$ podman run -it -p5901:5900/tcp \
-  -v ~/.kube:/tmp/.kube --security-opt label=disable \
-  --env "KUBECONFIG=/tmp/.kube/config" --name kubedoom
-  ghcr.io/storax/kubedoom:latest
+```bash
+vncviewer viewer localhost:5900
 ```
 
-### Attaching a VNC Client
+The default password is `1234` and the default terraform version is `1.4.6`.
 
-Now start a VNC viewer and connect to `localhost:5901`. The password is `idbehold`:
-```console
-$ vncviewer viewer localhost:5901
-```
-You should now see DOOM! Now if you want to get the job done quickly enter the
-cheat `idspispopd` and walk through the wall on your right. You should be
-greeted by your pods as little pink monsters. Press `CTRL` to fire. If the
-pistol is not your thing, cheat with `idkfa` and press `5` for a nice surprise.
-Pause the game with `ESC`.
+You can change them by building the image yourself:
 
-### Killing namespaces
-
-Kubedoom now also supports killing namespaces [in case you have too many of
-them](https://github.com/storax/kubedoom/issues/5). Simply set the `-mode` flag
-to `namespaces`:
-
-```console
-$ docker run -p5901:5900 \
-  --net=host \
-  -v ~/.kube:/root/.kube \
-  --rm -it --name kubedoom \
-  ghcr.io/storax/kubedoom:latest \
-  -mode namespaces
+```bash
+docker buildx build .\
+    -t ansible-doom \
+    --build-arg VNC_PASSWORD=custom_password \
+    --build-arg TERRAFORM_VERSION=version
 ```
 
-### Running Kubedoom inside Kubernetes
+## 🔎 Cheat codes
 
-See the example in the `/manifest` directory. You can quickly test it using
-[kind](https://github.com/kubernetes-sigs/kind). Create a cluster with the
-example config from this repository:
-
-```console
-$ kind create cluster --config kind-config.yaml
-Creating cluster "kind" ...
- ✓ Ensuring node image (kindest/node:v1.23.0) 🖼
- ✓ Preparing nodes 📦 📦
- ✓ Writing configuration 📜
- ✓ Starting control-plane 🕹️
- ✓ Installing CNI 🔌
- ✓ Installing StorageClass 💾
- ✓ Joining worker nodes 🚜
-Set kubectl context to "kind-kind"
-You can now use your cluster with:
-
-kubectl cluster-info --context kind-kind
-
-Not sure what to do next? 😅  Check out https://kind.sigs.k8s.io/docs/user/quick-start/
-```
-
-This will spin up a 2 node cluster inside docker, with port 5900 exposed from
-the worker node. Then run kubedoom inside the cluster by applying the manifest
-provided in this repository:
-
-```console
-$ kubectl apply -k manifest/
-namespace/kubedoom created
-deployment.apps/kubedoom created
-serviceaccount/kubedoom created
-clusterrolebinding.rbac.authorization.k8s.io/kubedoom created
-```
-
-To connect run:
-```console
-$ vncviewer viewer localhost:5900
-```
-
-Kubedoom requires a service account with permissions to list all pods and delete
-them and uses kubectl 1.23.2.
-
-## Building Kubedoom
-
-The repository contains a Dockerfile to build the kubedoom image. You have to
-specify your systems architecture as the `TARGETARCH` build argument. For
-example `amd64` or `arm64`.
-
-```console
-$ docker build --build-arg=TARGETARCH=amd64 -t kubedoom .
-```
-
-To change the default VNC password, use `--build-arg=VNCPASSWORD=differentpw`.
+There are some useful cheat codes in-game:
+- **`idkfa`**: Get a weapon on slot 5
+- **`idspispopd`**: No clip (useful to reach the mobs)
