@@ -516,8 +516,8 @@ R_DrawVisSprite
 // drawing the pid info.
 // Also, don't use the fact that a vis has a pid to determine
 // whether to draw; use the m_draw_pid_info flag instead.
-    if (vis->m_draw_pid_info && vis->scale>18000 &&
-       vis->x1>SCREENWIDTH/8 && vis->x2<SCREENWIDTH*7/8 &&
+    if (vis->m_draw_pid_info && vis->scale>6000 &&
+       vis->x1>SCREENWIDTH/16 && vis->x2<SCREENWIDTH*15/16 &&
        drawing_occurred ) {
 
        char buf[16];

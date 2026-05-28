@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# C build artifacts (under dockerdoom/)
+*.o
+*.a
+*.so
+*.deps/
+autom4te.cache/
+config.log
+config.status

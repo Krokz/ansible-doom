@@ -36,6 +36,7 @@ typedef enum
 // Functions
 void pr_check(void);
 void cleanup_pid_list(mobj_t *del_mobj);
-void pr_kill(int pid);
+void claim_all_remaining_monsters(void);
+void pr_kill(int pid, char *hostname);
 void pr_renice(int pid);
 void add_to_ps_userlist(ps_userlist_type_t listtype, char *username);

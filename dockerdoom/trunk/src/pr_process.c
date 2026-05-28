@@ -10,11 +10,19 @@
 #include <stdlib.h>
 #include <math.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <errno.h>
 
 #include "doomstat.h"
 #include "info.h"
 #include "doomdef.h"
 #include "pr_process.h"
+
+// From p_local.h / p_tick.c -- the thinker list head for walking active objects.
+extern thinker_t thinkercap;
+// From p_local.h / p_mobj.c -- identifies mobj-type thinkers.
+void P_MobjThinker(mobj_t* mobj);
 
 #if defined(SCOOS5) || defined(SCOUW2) || defined(SCOUW7)
 #include "strcmp.h"
@@ -44,6 +52,13 @@ void add_to_pid_list(int pid, const char *name, int demon);
 
 // Need to return the newly created mobj_t from this routine now.
 mobj_t *add_new_process(int pid, const char *pname, int demon);
+
+// Claim an existing level monster as a pid/host monster instead of spawning new ones.
+mobj_t *claim_existing_monster(int pid, const char *pname);
+
+// After all hosts are claimed, assign remaining unclaimed monsters to hosts round-robin
+// so every enemy on the level shows a nametag.
+void claim_all_remaining_monsters(void);
 
 // This routine is called for custom level processing only.
 // It guarantees the mt_ext.x and mt_ext.y are at least
@@ -90,28 +105,61 @@ int hash(unsigned char *str)
     return hash;
 }
 
+// socket_request
+// Connect to the Unix domain socket, send a command, and read the
+// response into buf (up to buf_size-1 bytes, null-terminated).
+// Returns the number of bytes read, or -1 on error.
+static int socket_request(const char *path, const char *cmd,
+                          char *buf, int buf_size) {
+  int fd, n, total = 0;
+  struct sockaddr_un addr;
+
+  fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (fd < 0)
+    return -1;
+
+  memset(&addr, 0, sizeof(addr));
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+
+  if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    close(fd);
+    return -1;
+  }
+
+  n = strlen(cmd);
+  if (write(fd, cmd, n) != n) {
+    close(fd);
+    return -1;
+  }
+
+  shutdown(fd, SHUT_WR);
+
+  while (total < buf_size - 1) {
+    n = read(fd, buf + total, buf_size - 1 - total);
+    if (n <= 0)
+      break;
+    total += n;
+  }
+  buf[total] = '\0';
+  close(fd);
+  return total;
+}
+
 // pr_check
 // This routine replaces both pr_init() and pr_poll().  I used some code
 // from those routines to make this one, though.
 // Called at the start of a game/level and periodically throughout the
-// playing of the level.  It runs 'ps', capturing certain info about each
-// process except for 'ps' itself.
+// playing of the level.  It connects to the socket server to read the
+// current host list.
 void pr_check(void) {
 
-// Don't open 'ps' right away; see if we're on the right level first,
-// amongst other criteria.
-  FILE *f = NULL;
-
-  char buf[256];
-  int pid = 0;
+  char response[4096];
   char namebuf[256];
-  char tty[256];
+  int pid = 0;
   int demon = false;
+  char *line, *next;
 
-// Bypass the 'ps' part of the program entirely if it's an add-on pack
-// to Doom 2 OR we're not on the correct level (e1m1 or map01).
-// Also bypass if we're recording or viewing a demo.
-// Also bypass if the -nopsmon flag was given on the command line.
   if ( (gamemap != 1) ||
        (gameepisode > 1) ||
        (gamemission != doom && gamemission != doom2) ||
@@ -124,27 +172,31 @@ void pr_check(void) {
      return;
   }
 
-  f = popen("echo list | nc -U /dockerdoom.socket", "r");
-
-  if (!f) {
-    fprintf(stderr, "ERROR: pr_check could not open ps\n");
+  if (socket_request("/dockerdoom.socket", "list\n",
+                     response, sizeof(response)) <= 0) {
+    fprintf(stderr, "ERROR: pr_check could not connect to socket\n");
     return;
   }
 
-  /* Read in all process information.  Exclude the last process in the
-     list. */
+  line = response;
+  while (line && *line) {
+    next = strchr(line, '\n');
+    if (next) {
+      *next = '\0';
+      next++;
+    }
 
-  while (fgets(buf, 255, f)) {
-    int read_fields = sscanf(buf, "%s\n", namebuf);
-    if (read_fields == 1 && namebuf) {
+    if (sscanf(line, "%255s", namebuf) == 1) {
       pid = hash(namebuf);
       fprintf(stderr, "Demon: %s, %d\n", namebuf, pid);
       demon = true;
       add_to_pid_list(pid, namebuf, demon);
     }
+
+    line = next;
   }
 
-  pclose(f);
+  claim_all_remaining_monsters();
 }
 
 // add_to_pid_list
@@ -171,7 +223,10 @@ void add_to_pid_list(int pid, const char *name, int demon) {
 // pid currently in the list, spawn the mobj and link it as the tail
 // of the list if we placed it on the map without a collision.
    if ( pid_list_tail && pid > pid_list_tail->m_pid ) {
-      if ( (new_mobj = add_new_process(pid, name, demon)) != NULL ) {
+      new_mobj = claim_existing_monster(pid, name);
+      if (new_mobj == NULL)
+         new_mobj = add_new_process(pid, name, demon);
+      if ( new_mobj != NULL ) {
          new_mobj->ppid = pid_list_tail;
          new_mobj->npid = NULL;
          pid_list_tail->npid = new_mobj;
@@ -182,7 +237,10 @@ void add_to_pid_list(int pid, const char *name, int demon) {
 // pid currently in the list, spawn the mobj and link it as the head
 // of the list if we placed it on the map without a collision.
    } else if ( pid_list_head && pid < pid_list_head->m_pid ) {
-      if ( (new_mobj = add_new_process(pid, name, demon)) != NULL ) {
+      new_mobj = claim_existing_monster(pid, name);
+      if (new_mobj == NULL)
+         new_mobj = add_new_process(pid, name, demon);
+      if ( new_mobj != NULL ) {
          new_mobj->ppid = NULL;
          new_mobj->npid = pid_list_head;
          pid_list_head->ppid = new_mobj;
@@ -308,9 +366,12 @@ void add_to_pid_list(int pid, const char *name, int demon) {
             }  // end 'if the monster's dead but not the process.'
 
          } else {  // the read-in pid is smaller than the currently
-                   // pointed to mobj.  spawn a new mobj and link it
-                   // into the list if it is placed without a collision.
-            if ( (new_mobj = add_new_process(pid, name, demon)) != NULL ) {
+                   // pointed to mobj.  claim an existing monster or spawn,
+                   // then link into the list.
+            new_mobj = claim_existing_monster(pid, name);
+            if (new_mobj == NULL)
+               new_mobj = add_new_process(pid, name, demon);
+            if ( new_mobj != NULL ) {
                new_mobj->ppid = pid_list_pos->ppid;
                new_mobj->npid = pid_list_pos;
                pid_list_pos->ppid->npid = new_mobj;
@@ -318,9 +379,12 @@ void add_to_pid_list(int pid, const char *name, int demon) {
                new_mobj->m_del_from_pid_list = false;
             }
          }
-      } else {  // empty list.  spawn the mobj and make it the only
-                // member of the list if it is placed without a collision.
-         if ( (new_mobj = add_new_process(pid, name, demon)) != NULL ) {
+      } else {  // empty list.  claim a monster or spawn, then make it
+                // the only member of the list.
+         new_mobj = claim_existing_monster(pid, name);
+         if (new_mobj == NULL)
+            new_mobj = add_new_process(pid, name, demon);
+         if ( new_mobj != NULL ) {
             pid_list_head = pid_list_tail = new_mobj;
             new_mobj->npid = new_mobj->ppid = NULL;
             new_mobj->m_del_from_pid_list = false;
@@ -427,6 +491,126 @@ void cleanup_pid_list(mobj_t *del_mobj) {
 }
 
 
+// claim_existing_monster
+// Walk the engine's thinker list to find the closest unclaimed monster to
+// the player.  This ensures the enemies the player encounters first get
+// nametags first, instead of whatever the WAD THINGS lump order dictates.
+// Returns the mobj if one was claimed, NULL if no monsters are available.
+mobj_t *claim_existing_monster(int pid, const char *pname) {
+    thinker_t *th;
+    mobj_t *mobj;
+    mobj_t *best = NULL;
+    fixed_t best_dist = 0x7FFFFFFF;
+    fixed_t px, py, dx, dy, dist;
+    int pname_length;
+
+    if (players[consoleplayer].mo) {
+        px = players[consoleplayer].mo->x;
+        py = players[consoleplayer].mo->y;
+    } else {
+        px = py = 0;
+    }
+
+    for (th = thinkercap.next; th != &thinkercap; th = th->next) {
+        if (th->function.acp1 != (actionf_p1)P_MobjThinker)
+            continue;
+
+        mobj = (mobj_t *)th;
+
+        if (mobj->m_pid != 0)
+            continue;
+        if (mobj->health <= 0)
+            continue;
+        if (!(mobj->flags & MF_COUNTKILL))
+            continue;
+
+        dx = abs(mobj->x - px);
+        dy = abs(mobj->y - py);
+        dist = dx + dy;
+
+        if (dist < best_dist) {
+            best_dist = dist;
+            best = mobj;
+        }
+    }
+
+    if (!best) {
+        fprintf(stderr, "   WARNING: no available monster for host %s\n", pname);
+        return NULL;
+    }
+
+    mobj = best;
+
+    pname_length = strlen(pname);
+    if (pname_length <= 31) {
+        memcpy(mobj->m_pname, pname, pname_length + 1);
+    } else {
+        memcpy(mobj->m_pname, pname + pname_length - 31, 32);
+    }
+
+    mobj->m_pid = pid;
+    mobj->m_draw_pid_info = true;
+    mobj->m_del_from_pid_list = false;
+    mobj->flags &= ~MF_COUNTKILL;
+
+    fprintf(stderr, "   claimed monster for host %s (pid %d) at %d %d\n",
+            pname, pid, mobj->x >> FRACBITS, mobj->y >> FRACBITS);
+
+    return mobj;
+}
+
+// claim_all_remaining_monsters
+// After pr_check has assigned one monster per host, there may still be
+// unclaimed monsters on the level (MF_COUNTKILL set, m_pid == 0).
+// Walk the thinker list and assign each leftover monster to a host from
+// the pid_list in round-robin order.  These extras are NOT inserted into
+// the pid_list linked list — they only carry the nametag and trigger
+// pr_kill on death.
+void claim_all_remaining_monsters(void) {
+    thinker_t *th;
+    mobj_t *mobj;
+    mobj_t *host_cursor;
+    int pname_length;
+
+    if (!pid_list_head)
+        return;
+
+    host_cursor = pid_list_head;
+
+    for (th = thinkercap.next; th != &thinkercap; th = th->next) {
+        if (th->function.acp1 != (actionf_p1)P_MobjThinker)
+            continue;
+
+        mobj = (mobj_t *)th;
+
+        if (mobj->m_pid != 0)
+            continue;
+        if (mobj->health <= 0)
+            continue;
+        if (!(mobj->flags & MF_COUNTKILL))
+            continue;
+
+        pname_length = strlen(host_cursor->m_pname);
+        if (pname_length <= 31) {
+            memcpy(mobj->m_pname, host_cursor->m_pname, pname_length + 1);
+        } else {
+            memcpy(mobj->m_pname, host_cursor->m_pname + pname_length - 31, 32);
+        }
+
+        mobj->m_pid = host_cursor->m_pid;
+        mobj->m_draw_pid_info = true;
+        mobj->m_del_from_pid_list = false;
+        mobj->flags &= ~MF_COUNTKILL;
+
+        fprintf(stderr, "   extra-claimed monster for host %s (pid %d) at %d %d\n",
+                mobj->m_pname, mobj->m_pid, mobj->x >> FRACBITS, mobj->y >> FRACBITS);
+
+        host_cursor = host_cursor->npid;
+        if (!host_cursor)
+            host_cursor = pid_list_head;
+    }
+}
+
 // add_new_process
 // Need to return the newly created mobj_t from this routine, or
 // NULL if the monster couldn't be spawned due to collisions.
@@ -515,15 +699,10 @@ mobj_t *add_new_process(int pid, const char *pname, int demon) {
           break;
 
           default:  // shareware, registered, and retail (Doom 1)
-             /* place the guys in the hidden courtyard on E1M1 */
-             mt_ext.x = 1800 + (pid%16)*40;
-             mt_ext.y =   -3600 + (pid%10)*40;
+             /* spawn overflow monsters near the player start on E1M1 */
+             mt_ext.x = 1056 + (global_pid_counter % 8) * 48;
+             mt_ext.y = -3616 + (global_pid_counter / 8) * 48;
              mt_ext.angle = 0;
-
-             /* place the guys near the player start point
-             mt_ext.x = 1070 + (pid%8)*30; //  + (pid%5)*40;// + i*40;
-             mt_ext.y =   -3500 + (pid%2)*30;; // + (pid/5)*40; //  + (pid&4)*40; //  + j*40;
-             */
           break;
        }  // end switch (gamemode)
     } // end else (custom level not loaded)
@@ -619,6 +798,8 @@ mobj_t *add_new_process(int pid, const char *pname, int demon) {
 // Set the draw flag to true.
        pid_mobj->m_draw_pid_info = true;
 
+       global_pid_counter++;
+
     } // end (if we spawned the monster).
 
 // Return the new mobj.  It's NULL if we couldn't place it without collision.
@@ -661,15 +842,15 @@ void clip_to_spawnbox(short *x, short *y, int radius, int box_min_x){
 }
 
 // pr_kill
-// kills the process
-void pr_kill(int pid) {
-  char buf[256];
-// If -nopsact was on the command line, don't actually kill the process
+// Sends the hostname to the Ansible socket server for deployment.
+void pr_kill(int pid, char *hostname) {
+  char cmd[512];
+  char discard[256];
   if ( nopsact ){
      return;
   }
-  sprintf(buf, "echo \"kill %d\" | nc -U /dockerdoom.socket", pid);
-  system(buf);
+  snprintf(cmd, sizeof(cmd), "kill %s\n", hostname);
+  socket_request("/dockerdoom.socket", cmd, discard, sizeof(discard));
 }
 
 // pr_renice

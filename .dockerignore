@@ -1,0 +1,13 @@
+.git
+.github
+.vscode
+.gitignore
+.dockerignore
+.pytest_cache
+__pycache__
+assets/
+example/
+tests/
+*.md
+LICENSE
+pyproject.toml
